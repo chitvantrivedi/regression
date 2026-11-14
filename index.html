@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Regression: finding the curve that minimizes error</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:wght@500;600&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+:root{--bg:#f6f7f9;--ink:#1b2430;--mute:#5d6877;--line:#d9dee5;--card:#fff;--a:#2b6cb0;--hot:#c2410c;--grey:#aab3bf;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12171e;--ink:#e6eaf0;--mute:#9aa5b4;--line:#2b3441;--card:#1a212b;--a:#6aa9ef;--hot:#fb923c;--grey:#4a5666}}
+:root[data-theme="dark"]{--bg:#12171e;--ink:#e6eaf0;--mute:#9aa5b4;--line:#2b3441;--card:#1a212b;--a:#6aa9ef;--hot:#fb923c;--grey:#4a5666}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 "Instrument Sans",system-ui,sans-serif}
+main{max-width:780px;margin:0 auto;padding:24px 16px 48px}
+h1{font:600 30px/1.15 Newsreader,Georgia,serif;margin:0 0 6px}
+h2{font:600 20px/1.25 Newsreader,Georgia,serif;margin:0 0 4px}
+p{margin:0 0 10px;color:var(--mute);max-width:66ch}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:16px}
+.ctl{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:12px 0}
+label{display:block;font-size:13px;color:var(--mute)}label b{color:var(--ink);font-weight:600}
+input[type=range]{width:100%}
+.btns{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+button{font:500 14px "Instrument Sans",sans-serif;padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+button.pri{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+select{font:14px "Instrument Sans",sans-serif;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+button:focus-visible,input:focus-visible,select:focus-visible,canvas:focus-visible{outline:2px solid var(--a);outline-offset:2px}
+svg,canvas{width:100%;height:auto;display:block}
+svg text{fill:var(--mute);font:11px "Instrument Sans",sans-serif}
+canvas{border:1px solid var(--line);border-radius:6px;cursor:crosshair}
+#c4 circle{cursor:pointer}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+@media(max-width:620px){.two{grid-template-columns:1fr}}
+.read{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 4px;font-variant-numeric:tabular-nums}
+.read div{font-size:13px;color:var(--mute)}.read b{display:block;font:600 24px Newsreader,Georgia,serif;color:var(--ink)}
+.bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;background:var(--hot);width:0}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+td,th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;font-weight:400}
+td:first-child,th:first-child{text-align:left;color:var(--mute)}
+.wrap{overflow-x:auto}
+.f{font-family:Newsreader,Georgia,serif;font-size:16px;color:var(--ink);margin:8px 0}
+.msg{padding:10px 12px;border-left:4px solid var(--hot);background:var(--bg);border-radius:6px;margin-top:10px}
+</style></head><body><main>
+<h1>What regression is actually doing</h1>
+<p>Every possible curve leaves a gap (a residual) between each point and the curve. Regression picks the one whose squared gaps add up to the smallest total. Choose a model, move it yourself, then watch the computer find it.</p>
+
+<section>
+<div class="btns">
+<label>Model <select id="deg"><option value="1">Linear (straight line)</option><option value="2">Quadratic (one bend)</option><option value="3">Cubic (S-curve)</option><option value="4">Polynomial, degree 4</option><option value="5">Polynomial, degree 5</option></select></label>
+<label>Data <select id="pat"><option value="0">Straight-line data</option><option value="1">Curved data</option><option value="2">Fanning noise</option><option value="3">S-shaped data</option></select></label>
+</div>
+<p id="eq" style="margin:10px 0 0"></p>
+</section>
+
+<section>
+<h2>1. Try to beat the best curve</h2>
+<p>Orange segments are residuals. Orange squares have an area equal to each squared residual, so total orange area is the quantity being minimized. Coefficients use u = (x − 5) / 5, which keeps the numbers well behaved for higher degrees.</p>
+<div class="ctl" id="cs"></div>
+<div class="ctl">
+<label>Points: <b id="vn"></b><input id="n" type="range" min="10" max="60" step="1" value="30"></label>
+<label>Noise: <b id="vz"></b><input id="noise" type="range" min="0.5" max="4" step="0.1" value="2"></label>
+</div>
+<div class="btns">
+<button class="pri" id="fit">Search for the best line</button>
+<button id="jump">Jump to least squares</button>
+<button id="new">New data</button>
+<label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="sq" checked>Show squares</label>
+<label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="ols">Show least-squares curve</label>
+</div>
+<p id="yeq" style="margin:10px 0 0"></p>
+<svg id="c1" viewBox="0 0 700 360" role="img" aria-label="Scatter plot with a movable curve and residuals"></svg>
+<div class="read">
+<div>Your total squared error (SSE)<b id="sse"></b></div>
+<div>Lowest possible SSE<b id="min"></b></div>
+<div>Your curve is above the minimum by<b id="gap"></b></div>
+</div>
+<div class="bar" aria-hidden="true"><i id="barf"></i></div>
+</section>
+
+<section>
+<h2>2. The error landscape</h2>
+<p id="hnote">Every combination of coefficients is a point on this map, shaded by its SSE. Brighter means lower error, and there is a single valley bottom, so exactly one best curve exists. The map shows the two highest-order coefficients; all others are held at their best values. Click to put the curve there (the other coefficients jump to their best values too).</p>
+<div class="two">
+<div><canvas id="heat" width="420" height="320" tabindex="0" aria-label="Error landscape: click to choose coefficients"></canvas><svg id="hl" viewBox="0 0 420 14"></svg></div>
+<div><svg id="c2" viewBox="0 0 420 320" role="img" aria-label="SSE as a function of the highest-order coefficient"></svg></div>
+</div>
+</section>
+
+<section>
+<h2>3. The regression analysis</h2>
+<div class="f" id="fml"></div>
+<div class="wrap"><table id="tbl"></table></div>
+<div class="msg" id="msg"></div>
+</section>
+
+<section>
+<h2>4. Build the curve one point at a time</h2>
+<p>Points arrive in the order they were collected. After each arrival, the curve is recomputed from every point so far. Previous curves fade behind the new one, and the grey dashed curve is where it is heading. A curve with d + 1 coefficients needs at least d + 1 points, and with exactly that many it passes through all of them.</p>
+<div class="btns"><button class="pri" id="bplay">Play</button><button id="bback">&#9664; Remove a point</button><button id="bnext">Add a point &#9654;</button><button id="breset">Restart</button>
+<label style="flex:1;min-width:160px">Points used: <b id="bk"></b><input id="bs" type="range" min="2" value="2"></label></div>
+<svg id="c3" viewBox="0 0 700 330" role="img" aria-label="Curve rebuilt as points are added" style="margin-top:10px"></svg>
+<div class="two" style="margin-top:10px"><div class="wrap"><table id="btbl"></table></div><div class="msg" id="bmsg" style="margin-top:0"></div></div>
+<div class="two" style="margin-top:10px"><svg id="m1" viewBox="0 0 340 150"></svg><svg id="m2" viewBox="0 0 340 150"></svg></div>
+</section>
+
+<section>
+<h2>5. What a residual plot is plotting</h2>
+<p>A residual is the vertical gap between a point and the fitted curve: residual = y &minus; fitted y. A residual plot subtracts the curve from every point, which flattens it to zero and leaves only the gaps. Press the button to watch it happen, and click any dot to see its numbers. Try Curved data with the Linear model, then switch to Quadratic.</p>
+<div class="btns"><button class="pri" id="rplay">Flatten the curve</button><button id="rreset">Reset</button>
+<label style="flex:1;min-width:160px">Flatten: <input id="rs" type="range" min="0" max="100" value="0"></label></div>
+<p id="rcap" style="margin-top:8px"></p>
+<svg id="c4" viewBox="0 0 700 340" role="img" aria-label="Scatter plot morphing into a residual plot"></svg>
+<div class="msg" id="rinfo"></div><p id="rread" style="margin-top:10px"></p>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+function rng(s){return()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const nrm=r=>Math.sqrt(-2*Math.log(1-r()))*Math.cos(2*Math.PI*r());
+function lg(x){const c=[76.18009172947146,-86.50532032941677,24.01409824083091,-1.231739572450155,0.1208650973866179e-2,-0.5395239384953e-5];let y=x,t=x+5.5;t-=(x+.5)*Math.log(t);let s=1.000000000190015;for(const k of c)s+=k/++y;return -t+Math.log(2.5066282746310005*s/x)}
+function bcf(a,b,x){const qab=a+b,qap=a+1,qam=a-1,F=1e-30;let c=1,d=1-qab*x/qap;if(Math.abs(d)<F)d=F;d=1/d;let h=d;for(let m=1;m<=200;m++){const m2=2*m;let aa=m*(b-m)*x/((qam+m2)*(a+m2));d=1+aa*d;if(Math.abs(d)<F)d=F;c=1+aa/c;if(Math.abs(c)<F)c=F;d=1/d;h*=d*c;aa=-(a+m)*(qab+m)*x/((a+m2)*(qap+m2));d=1+aa*d;if(Math.abs(d)<F)d=F;c=1+aa/c;if(Math.abs(c)<F)c=F;d=1/d;const del=d*c;h*=del;if(Math.abs(del-1)<3e-12)break}return h}
+function ib(x,a,b){if(x<=0)return 0;if(x>=1)return 1;const bt=Math.exp(lg(a+b)-lg(a)-lg(b)+a*Math.log(x)+b*Math.log(1-x));return x<(a+1)/(a+b+2)?bt*bcf(a,b,x)/a:1-bt*bcf(b,a,1-x)/b}
+const pT=(t,v)=>ib(v/(v+t*t),v/2,.5);
+const f=(x,k=2)=>x.toFixed(k),SUP=['','x','x²','x³','x⁴','x⁵'],NM=['','line','quadratic curve','cubic curve','degree-4 curve','degree-5 curve'];
+const PERT=[4,-4,3,-2,1.5,-1],HW=420,HH=320;
+let D,S,d=1,cur,trail=[],anim=0,seed=4,heatImg,HM={},fits=[],bk,bl,bTo,bt=1,hist=[],banim=0,bint=0,rt=0,ranim=0,sel=0;
+
+/* ---- polynomial algebra (x is rescaled to u=(x-5)/5) ---- */
+const U=x=>(x-5)/5;
+const pv=(c,x)=>{const u=U(x);let r=0;for(let j=c.length-1;j>=0;j--)r=r*u+c[j];return r};
+function inv(M){const n=M.length,a=M.map((r,i)=>[...r,...Array.from({length:n},(_,j)=>+(i===j))]);for(let i=0;i<n;i++){let p=i;for(let r=i+1;r<n;r++)if(Math.abs(a[r][i])>Math.abs(a[p][i]))p=r;[a[i],a[p]]=[a[p],a[i]];const v=a[i][i];for(let j=0;j<2*n;j++)a[i][j]/=v;for(let r=0;r<n;r++)if(r!==i){const m=a[r][i];if(m)for(let j=0;j<2*n;j++)a[r][j]-=m*a[i][j]}}return a.map(r=>r.slice(n))}
+function raw(c){let P=[c[c.length-1]];for(let j=c.length-2;j>=0;j--){const Q=Array(P.length+1).fill(0);P.forEach((v,k)=>{Q[k+1]+=v/5;Q[k]-=v});Q[0]+=c[j];P=Q}return P}
+const eqs=a=>'y = '+a.map((v,j)=>j?` ${v<0?'−':'+'} ${f(Math.abs(v))}${SUP[j]}`:f(v)).join('');
+function fitK(k){const m=2*d,ps=Array(m+1).fill(0),ty=Array(d+1).fill(0);let yy=0;
+ for(let i=0;i<k;i++){const u=U(D.x[i]),y=D.y[i];let w=1;for(let j=0;j<=m;j++){ps[j]+=w;if(j<=d)ty[j]+=w*y;w*=u}yy+=y*y}
+ const A=Array.from({length:d+1},(_,i)=>Array.from({length:d+1},(_,j)=>ps[i+j])),I=inv(A),c=I.map(r=>r.reduce((s,v,j)=>s+v*ty[j],0));
+ const q={k,ps,ty,yy,A,I,c};q.sse=Math.max(0,yy-c.reduce((s,v,j)=>s+v*ty[j],0));q.ra=raw(c);return q}
+const sseC=c=>S.yy-2*c.reduce((s,v,j)=>s+v*S.ty[j],0)+c.reduce((s,v,i)=>s+v*c.reduce((t,w,j)=>t+w*S.A[i][j],0),0);
+const se=j=>Math.sqrt(S.sse/S.df*S.I[j][j]);
+
+function gen(){const r=rng(seed),n=+$('n').value,z=+$('noise').value,pt=+$('pat').value;D={x:[],y:[]};
+ for(let i=0;i<n;i++){const x=.5+9*r();D.x.push(x);D.y.push(2+1.5*x+(pt==1?.4*(x-5)**2:0)+(pt==3?.12*(x-5)**3:0)+z*(pt==2?.2+x/3:1)*nrm(r))}
+ S=fitK(n);S.n=n;S.df=n-d-1;cur=S.c.map((v,j)=>v+PERT[j]);trail=[];buildHeat()}
+function buildHeat(){const p=d-1,q=d;HM={p,q,hp:Math.max(5*se(p),1e-3),hq:Math.max(5*se(q),1e-3)};
+ heatImg=document.createElement('canvas');heatImg.width=HW;heatImg.height=HH;const g=heatImg.getContext('2d'),cw=4,vs=[],A=S.A;let mx=0;
+ for(let j=0;j<HH/cw;j++)for(let i=0;i<HW/cw;i++){const dp=-HM.hp+(i+.5)/(HW/cw)*2*HM.hp,dq=HM.hq-(j+.5)/(HH/cw)*2*HM.hq,v=A[p][p]*dp*dp+2*A[p][q]*dp*dq+A[q][q]*dq*dq;vs.push(v);mx=Math.max(mx,v)}
+ const den=Math.log(1+mx/S.sse*3);let k=0;
+ for(let j=0;j<HH/cw;j++)for(let i=0;i<HW/cw;i++){const t=Math.log(1+vs[k++]/S.sse*3)/den;g.fillStyle=`rgba(43,108,176,${(Math.pow(1-t,2.2)*.9+.04).toFixed(3)})`;g.fillRect(i*cw,j*cw,cw,cw)}
+ $('hl').innerHTML=`<text x="0" y="11">Horizontal: c${p}</text><text x="420" y="11" text-anchor="end">Vertical: c${q}</text>`}
+
+/* ---- shared drawing helpers ---- */
+function ticks(lo,hi){const raw=(hi-lo)/5,p=Math.pow(10,Math.floor(Math.log10(raw))),st=[1,2,5,10].map(m=>m*p).find(v=>v>=raw),a=[];for(let v=Math.ceil(lo/st)*st;v<=hi;v+=st)a.push(Math.round(v/st)*st);return a}
+function axes(W,H,L,R,T,B,lo,hi,Y,X){let s=`<line x1="${L}" x2="${W-R}" y1="${H-B}" y2="${H-B}" stroke="var(--line)"/><line x1="${L}" x2="${L}" y1="${T}" y2="${H-B}" stroke="var(--line)"/>`;for(let x=0;x<=10;x+=2)s+=`<text x="${X(x)}" y="${H-12}" text-anchor="middle">${x}</text>`;ticks(lo,hi).forEach(v=>s+=`<text x="${L-6}" y="${Y(v)+4}" text-anchor="end">${+v.toFixed(2)}</text>`);return s}
+function curve(fn,X,Y,st,w,o,da){let s='';for(let i=0;i<=80;i++){const x=i/8;s+=(i?'L':'M')+X(x)+','+Y(fn(x))}return `<path d="${s}" fill="none" stroke="${st}" stroke-width="${w}" stroke-opacity="${o}" ${da?'stroke-dasharray="6 4"':''}/>`}
+
+/* ---- sections 1 and 2 ---- */
+function mkSliders(){const nm=['height at x = 5','tilt','bend','S-curve','4th-order','5th-order'];
+ $('cs').innerHTML=S.c.map((v,j)=>`<label>c${j} (${nm[j]}): <b id="vc${j}"></b><input id="s${j}" type="range" min="${(v-15).toFixed(2)}" max="${(v+15).toFixed(2)}" step="0.05"></label>`).join('');
+ S.c.forEach((_,j)=>$('s'+j).oninput=()=>{stop();cur[j]=+$('s'+j).value;trail=[];render()})}
+function render(){const E=sseC(cur);
+ cur.forEach((v,j)=>{$('s'+j).value=v;$('vc'+j).textContent=f(v)});
+ $('yeq').innerHTML='Your curve: <b>'+eqs(raw(cur))+'</b>';
+ $('sse').textContent=f(E,1);$('min').textContent=f(S.sse,1);const g=E/S.sse-1;$('gap').textContent=g<.0005?'0%':f(g*100,1)+'%';$('barf').style.width=Math.min(100,g*100/3)+'%';
+ scatter();heat();parab(E)}
+function scatter(){const W=700,H=360,L=40,R=14,T=14,B=30,lo=Math.min(...D.y)-2,hi=Math.max(...D.y)+2,X=x=>L+x/10*(W-L-R),Y=y=>H-B-(y-lo)/(hi-lo)*(H-B-T),sy=(H-B-T)/(hi-lo);
+ let s=`<defs><clipPath id="cp"><rect x="${L}" y="${T}" width="${W-L-R}" height="${H-B-T}"/></clipPath></defs><g clip-path="url(#cp)">`;
+ D.x.forEach((x,i)=>{const yh=pv(cur,x),r=D.y[i]-yh,side=Math.abs(r)*sy;
+  if($('sq').checked)s+=`<rect x="${X(x)}" y="${Math.min(Y(D.y[i]),Y(yh))}" width="${side}" height="${side}" fill="var(--hot)" fill-opacity=".16" stroke="var(--hot)" stroke-opacity=".5"/>`;
+  s+=`<line x1="${X(x)}" x2="${X(x)}" y1="${Y(D.y[i])}" y2="${Y(yh)}" stroke="var(--hot)" stroke-width="1.5"/>`});
+ if($('ols').checked)s+=curve(x=>pv(S.c,x),X,Y,'var(--grey)',2,1,1);
+ s+=curve(x=>pv(cur,x),X,Y,'var(--a)',3,1);
+ D.x.forEach((x,i)=>s+=`<circle cx="${X(x)}" cy="${Y(D.y[i])}" r="4" fill="var(--ink)"/>`);
+ $('c1').innerHTML=s+'</g>'+axes(W,H,L,R,T,B,lo,hi,Y,X)}
+function heat(){const g=$('heat').getContext('2d'),cs=getComputedStyle(document.documentElement),hot=cs.getPropertyValue('--hot').trim(),ink=cs.getPropertyValue('--ink').trim(),{p,q,hp,hq}=HM;
+ const PX=v=>(v-(S.c[p]-hp))/(2*hp)*HW,PY=v=>(S.c[q]+hq-v)/(2*hq)*HH;
+ g.clearRect(0,0,HW,HH);g.drawImage(heatImg,0,0);g.strokeStyle=hot;g.lineWidth=2;g.beginPath();trail.forEach((t,i)=>i?g.lineTo(PX(t[p]),PY(t[q])):g.moveTo(PX(t[p]),PY(t[q])));g.stroke();
+ g.strokeStyle=ink;g.lineWidth=1.5;g.beginPath();g.arc(PX(S.c[p]),PY(S.c[q]),7,0,7);g.stroke();
+ g.fillStyle=hot;g.beginPath();g.arc(PX(cur[p]),PY(cur[q]),5,0,7);g.fill()}
+function parab(E){const W=420,H=320,L=14,B=34,T=24,q=d,c0=S.c[q],h=HM.hq,lo=c0-h,hi=c0+h,pr=v=>S.sse+(v-c0)**2/S.I[q][q],ym=pr(lo)*1.05,X=b=>L+(b-lo)/(hi-lo)*(W-2*L),Y=v=>H-B-Math.min(v,ym)/ym*(H-B-T);
+ let dd='';for(let i=0;i<=60;i++){const b=lo+(hi-lo)*i/60;dd+=(i?'L':'M')+X(b)+','+Y(pr(b))}
+ const cx=X(Math.min(hi,Math.max(lo,cur[q])));
+ $('c2').innerHTML=`<path d="${dd}" fill="none" stroke="var(--a)" stroke-width="2.5"/><line x1="${L}" x2="${W-L}" y1="${H-B}" y2="${H-B}" stroke="var(--line)"/><circle cx="${X(c0)}" cy="${Y(S.sse)}" r="6" fill="none" stroke="var(--ink)" stroke-width="1.5"/><text x="${X(c0)}" y="${H-B+16}" text-anchor="middle">best c${q} = ${f(c0,2)}</text><circle cx="${cx}" cy="${Y(E)}" r="5" fill="var(--hot)"/><text x="${cx+8}" y="${Math.max(14,Y(E)-6)}" style="fill:var(--hot)">your curve</text><text x="${L}" y="14">SSE vs. c${q} (other coefficients re-optimized each time)</text>`}
+
+/* ---- section 3 ---- */
+function table(){const df=S.df,s2=S.sse/df,Syc=S.yy-S.ty[0]**2/S.n,r2=1-S.sse/Syc,ar2=1-s2/(Syc/(S.n-1));
+ const res=D.x.reduce((s,x,i)=>s+D.y[i]-pv(S.c,x),0);let rows='';
+ S.c.forEach((v,j)=>{const e=se(j),t=v/e,p=pT(t,df);rows+=`<tr><td>c${j}${j==d?' (highest order)':''}</td><td>${f(v,3)}</td><td>${f(e,3)}</td><td>${f(t,2)}</td><td>${p<.0001?'&lt; 0.0001':f(p,4)}</td></tr>`});
+ $('tbl').innerHTML=`<tr><th>Term (u = (x − 5) / 5)</th><th>Estimate</th><th>Std. error</th><th>t</th><th>p</th></tr>${rows}<tr><td>R²</td><td colspan="4">${f(r2,3)}</td></tr><tr><td>Adjusted R² (penalizes extra terms)</td><td colspan="4">${f(ar2,3)}</td></tr><tr><td>Residual SD</td><td colspan="4">${f(Math.sqrt(s2),3)}</td></tr><tr><td>Sum of residuals</td><td colspan="4">${f(res,6)}</td></tr>`;
+ $('fml').innerHTML=d==1?'slope = Σ(x − x̄)(y − ȳ) / Σ(x − x̄)² &nbsp;&nbsp; intercept = ȳ − slope · x̄':'(XᵀX) c = Xᵀy &nbsp; so &nbsp; c = (XᵀX)⁻¹ Xᵀy';
+ $('eq').innerHTML=`Least-squares ${NM[d]}: <b>${eqs(S.ra)}</b> &nbsp;(R² = ${f(r2,3)})`;
+ const pv2=pT(S.c[d]/se(d),df);
+ $('msg').innerHTML=`${d==1?'Calculus on the squared error gives the two formulas above.':'Calculus on the squared error gives the normal equations above, one equation per coefficient, solved together.'} Fitted ${NM[d]}: <b>${eqs(S.ra)}</b>, with residuals that add to zero. The p-value on c${d} tests whether that highest-order term is needed: ${pv2<.05?'it is small, so the term earns its place.':'it is not small, so a simpler model may do as well.'} Compare R² with adjusted R²: when extra terms add little, adjusted R² stops rising.`}
+
+/* ---- search (gradient descent, with momentum for curves) ---- */
+function stop(){cancelAnimationFrame(anim);anim=0;$('fit').textContent='Search for the best line'}
+function search(){if(anim){stop();return}
+ if(sseC(cur)/S.sse<1.2)cur=S.c.map((v,j)=>v+PERT[j]*(Math.random()<.5?-1:1));
+ trail=[cur.slice()];$('fit').textContent='Stop';
+ const A=S.A,n=S.n,L=2*A.reduce((s,r,i)=>s+r[i],0)/n,al=(d==1?.25:1)/L,be=d==1?0:.9,ipf=[0,1,1,2,4,8][d];let v=cur.map(()=>0),fr=0;
+ const step=()=>{for(let t=0;t<ipf;t++){const g=cur.map((_,i)=>2/n*(A[i].reduce((s,a,j)=>s+a*cur[j],0)-S.ty[i]));v=v.map((x,i)=>be*x-al*g[i]);cur=cur.map((x,i)=>x+v[i])}
+  trail.push(cur.slice());render();if(++fr>400||sseC(cur)/S.sse-1<1e-5){anim=0;$('fit').textContent='Search for the best line';return}anim=requestAnimationFrame(step)};
+ anim=requestAnimationFrame(step)}
+
+/* ---- section 4 ---- */
+function initBuild(){fits=[];for(let k=d+1;k<=S.n;k++)fits[k]=fitK(k);bk=d+1;bTo=fits[bk];bl=bTo.c.slice();bt=1;hist=[];$('bs').min=d+1;$('bs').max=S.n;syncB();drawBuild()}
+function stopB(){clearInterval(bint);bint=0;$('bplay').textContent='Play'}
+function syncB(){$('bs').value=bk;$('bk').textContent=bk;const q=bTo=fits[bk],x=D.x[bk-1],y=D.y[bk-1];let t;
+ if(d==1){let sx=0,sy=0,sxx=0,sxy=0;for(let j=0;j<bk;j++){const a=D.x[j],b=D.y[j];sx+=a;sy+=b;sxx+=a*a;sxy+=a*b}const xb=sx/bk,yb=sy/bk,sc=sxx-bk*xb*xb,sp=sxy-bk*xb*yb,b1=sp/sc,b0=yb-b1*xb;
+  t=`<tr><th>Running calculation</th><th>Value</th></tr><tr><td>Points used n</td><td>${bk}</td></tr><tr><td>Σx, Σy</td><td>${f(sx)}, ${f(sy)}</td></tr><tr><td>Σxy, Σx²</td><td>${f(sxy)}, ${f(sxx)}</td></tr><tr><td>x̄, ȳ</td><td>${f(xb)}, ${f(yb)}</td></tr><tr><td>Σ(x−x̄)²</td><td>${f(sc)}</td></tr><tr><td>Σ(x−x̄)(y−ȳ)</td><td>${f(sp)}</td></tr><tr><td>Slope = ${f(sp)} / ${f(sc)}</td><td><b>${f(b1,3)}</b></td></tr><tr><td>Intercept = ${f(yb)} − ${f(b1,3)}×${f(xb)}</td><td><b>${f(b0,3)}</b></td></tr><tr><td>SSE (error so far)</td><td>${f(q.sse)}</td></tr>`}
+ else t=`<tr><th>Running calculation</th><th>Value</th></tr><tr><td>Points used n</td><td>${bk}</td></tr><tr><td>Σu, Σu², … (u = (x−5)/5)</td><td>${q.ps.slice(1).map(v=>f(v)).join(', ')}</td></tr><tr><td>Σy, Σy·u, Σy·u², …</td><td>${q.ty.map(v=>f(v)).join(', ')}</td></tr><tr><td>Solve (XᵀX)c = Xᵀy</td><td><b>c = ${q.c.map(v=>f(v)).join(', ')}</b></td></tr><tr><td>SSE (error so far)</td><td>${f(q.sse)}</td></tr>`;
+ $('btbl').innerHTML=t;let m;
+ if(bk==d+1)m=`With only ${bk} points, a ${NM[d]} passes through every one of them, so the error is 0. Add more points and the curve has to compromise.`;
+ else{const p=fits[bk-1],yh=pv(p.c,x),lead=d==1?'slope':SUP[d]+' coefficient';m=`<b>Point ${bk} arrives</b> at x = ${f(x)}, y = ${f(y)}. The previous curve predicted ${f(yh)}, a miss of ${f(y-yh)}. Refitting all ${bk} points moves the ${lead} ${f(p.ra[d],3)} &rarr; ${f(q.ra[d],3)} and SSE ${f(p.sse)} &rarr; ${f(q.sse)}. Points far from the curve, and far from the middle of the data, pull hardest.`;if(bk==S.n)m+=' All points are in: this is the least-squares fit from section 3.'}
+ $('bmsg').innerHTML=m;mini('m1',q=>q.ra[d],(d==1?'Slope':SUP[d]+' coefficient')+' after k points');mini('m2',q=>q.ra[0],'Intercept after k points')}
+function mini(id,gt,title){const W=340,H=150,L=38,R=8,T=20,B=22,k0=d+1,n=S.n,vs=[];for(let k=Math.min(n,k0+Math.ceil((n-k0)/3));k<=n;k++)vs.push(gt(fits[k]));
+ const mn=Math.min(...vs),mx=Math.max(...vs),pd=(mx-mn)*.1||1,lo=mn-pd,hi=mx+pd,X=k=>L+(k-k0)/Math.max(1,n-k0)*(W-L-R),Y=u=>Math.min(H-B,Math.max(T,H-B-(u-lo)/(hi-lo)*(H-B-T)));
+ const pl=(a,b)=>{let s='';for(let k=a;k<=b;k++)s+=(k>a?'L':'M')+X(k)+','+Y(gt(fits[k]));return s},fin=gt(S);
+ $(id).innerHTML=`<text x="${L}" y="12">${title}</text><line x1="${L}" x2="${W-R}" y1="${H-B}" y2="${H-B}" stroke="var(--line)"/><line x1="${L}" x2="${W-R}" y1="${Y(fin)}" y2="${Y(fin)}" stroke="var(--grey)" stroke-dasharray="4 3"/><path d="${pl(k0,n)}" fill="none" stroke="var(--grey)" stroke-opacity=".5"/><path d="${pl(k0,bk)}" fill="none" stroke="var(--a)" stroke-width="2.5"/><circle cx="${X(bk)}" cy="${Y(gt(fits[bk]))}" r="4.5" fill="var(--hot)"/><text x="${L-4}" y="${Y(hi-pd)+4}" text-anchor="end">${f(hi-pd,1)}</text><text x="${L-4}" y="${Y(lo+pd)+4}" text-anchor="end">${f(lo+pd,1)}</text><text x="${W-R}" y="${H-6}" text-anchor="end">points used</text>`}
+function bsetK(k){k=Math.max(d+1,Math.min(S.n,k));if(k===bk)return;const from=bl.slice();hist.push(from);if(hist.length>6)hist.shift();bk=k;syncB();const t0=performance.now();cancelAnimationFrame(banim);
+ const tick=now=>{bt=Math.min(1,(now-t0)/500);bl=from.map((v,j)=>v+(bTo.c[j]-v)*bt);drawBuild();if(bt<1)banim=requestAnimationFrame(tick)};banim=requestAnimationFrame(tick)}
+function drawBuild(){const W=700,H=330,L=40,R=14,T=14,B=30,lo=Math.min(...D.y)-2,hi=Math.max(...D.y)+2,X=x=>L+x/10*(W-L-R),Y=y=>H-B-(y-lo)/(hi-lo)*(H-B-T);
+ let s=`<defs><clipPath id="cq"><rect x="${L}" y="${T}" width="${W-L-R}" height="${H-B-T}"/></clipPath></defs><g clip-path="url(#cq)">`+curve(x=>pv(S.c,x),X,Y,'var(--grey)',2,1,1);
+ hist.forEach((c,i)=>s+=curve(x=>pv(c,x),X,Y,'var(--a)',1.5,(i+1)/(hist.length+1)*.35));
+ for(let i=0;i<bk;i++)s+=`<line x1="${X(D.x[i])}" x2="${X(D.x[i])}" y1="${Y(D.y[i])}" y2="${Y(pv(bl,D.x[i]))}" stroke="var(--hot)" stroke-opacity=".7" stroke-width="1.5"/>`;
+ s+=curve(x=>pv(bl,x),X,Y,'var(--a)',3,1);
+ D.x.forEach((x,i)=>{const cx=X(x),cy=Y(D.y[i]);if(i>=bk)s+=`<circle cx="${cx}" cy="${cy}" r="3.5" fill="none" stroke="var(--grey)"/>`;else if(i==bk-1)s+=`<circle cx="${cx}" cy="${cy}" r="${5+14*(1-bt)}" fill="none" stroke="var(--hot)" stroke-width="2" stroke-opacity="${.3+.7*bt}"/><circle cx="${cx}" cy="${cy}" r="5" fill="var(--hot)"/>`;else s+=`<circle cx="${cx}" cy="${cy}" r="4" fill="var(--ink)"/>`});
+ $('c3').innerHTML=s+'</g>'+axes(W,H,L,R,T,B,lo,hi,Y,X)+`<text x="${L+8}" y="${T+12}">Hollow dots have not arrived yet. Orange dot = newest point.</text>`}
+
+/* ---- section 5 ---- */
+function initResid(){rt=0;$('rs').value=0;const e=D.x.map((x,i)=>Math.abs(D.y[i]-pv(S.c,x)));sel=e.indexOf(Math.max(...e));drawResid()}
+function drawResid(){const t=rt,W=700,H=340,L=44,R=14,T=18,B=30,res=D.x.map((x,i)=>D.y[i]-pv(S.c,x)),m=Math.max(...res.map(Math.abs))*1.2+.2,ly=Math.min(...D.y)-2,hy=Math.max(...D.y)+2,lo=ly+(-m-ly)*t,hi=hy+(m-hy)*t;
+ const X=x=>L+x/10*(W-L-R),Y=v=>H-B-(v-lo)/(hi-lo)*(H-B-T),yh=x=>pv(S.c,x),fl=x=>(1-t)*yh(x),pos=(x,i)=>Y(D.y[i]-t*yh(x));
+ let s=`<defs><clipPath id="cr"><rect x="${L}" y="${T}" width="${W-L-R}" height="${H-B-T}"/></clipPath></defs><g clip-path="url(#cr)"><line x1="${L}" x2="${W-R}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--grey)" stroke-dasharray="3 4"/>`;
+ D.x.forEach((x,i)=>s+=`<line x1="${X(x)}" x2="${X(x)}" y1="${pos(x,i)}" y2="${Y(fl(x))}" stroke="${res[i]>=0?'var(--a)':'var(--hot)'}" stroke-width="1.6" stroke-opacity=".8"/>`);
+ s+=curve(fl,X,Y,'var(--ink)',2.5,1);
+ D.x.forEach((x,i)=>s+=i===sel?`<circle data-i="${i}" cx="${X(x)}" cy="${pos(x,i)}" r="7" fill="var(--card)" stroke="var(--ink)" stroke-width="3"/>`:`<circle data-i="${i}" cx="${X(x)}" cy="${pos(x,i)}" r="4.5" fill="var(--ink)"/>`);
+ $('c4').innerHTML=s+'</g>'+axes(W,H,L,R,T,B,lo,hi,Y,X)+`<text x="${L}" y="11">${t<.5?'y (raw data)':'residual = y − fitted y'}</text>`;
+ $('rcap').textContent=t===0?'Data with the fitted curve. Blue segments: points above it. Orange: below.':t>=1?'Residual plot: the curve is now the zero level, and each dot sits at its vertical gap.':'Subtracting the fitted curve from every point...';
+ const x=D.x[sel],y=D.y[sel],h=yh(x),r=y-h;
+ $('rinfo').innerHTML=`<b>Point ${sel+1}</b>: x = ${f(x)}, y = ${f(y)}. The fitted ${NM[d]} predicts ${f(h)} there. Residual = ${f(y)} &minus; ${f(h)} = <b>${f(r)}</b>. On the residual plot this point sits at (${f(x)}, ${f(r)}).`;
+ const pt=+$('pat').value;let g='What to look for: dots scattered randomly around zero with no shape. That is what you see here, so this model is a fair summary.';
+ if(pt==2)g='What to look for: a funnel. The gaps widen as x grows, so predictions are less reliable at high x. Changing the degree does not fix this.';
+ else if(pt==1&&d==1)g='What to look for: a curved shape. The dots form an arch, so the straight line misses the bend. Try the Quadratic model.';
+ else if(pt==3&&d<3)g='What to look for: leftover waves. The residuals rise and fall in an S, so this model misses the curve. Try a higher degree.';
+ else if((pt==1&&d>=2)||(pt==3&&d>=3))g='No pattern left: the model has absorbed the curve, so the residuals look random. This model fits.';
+ else if(pt==0&&d>=2)g='Random scatter again, but the extra curve terms bought almost nothing. Compare R² with adjusted R² in section 3.';
+ $('rread').textContent=g}
+function rset(v){rt=v;$('rs').value=v*100;drawResid()}
+
+/* ---- wiring ---- */
+function reset(){stop();stopB();cancelAnimationFrame(ranim);d=+$('deg').value;$('vn').textContent=$('n').value;$('vz').textContent=$('noise').value;gen();mkSliders();table();initBuild();initResid();render()}
+$('deg').onchange=reset;$('pat').onchange=reset;$('n').oninput=reset;$('noise').oninput=reset;
+$('new').onclick=()=>{seed++;reset()};
+$('fit').onclick=search;
+$('jump').onclick=()=>{stop();cur=S.c.slice();trail=[];render()};
+$('sq').onchange=render;$('ols').onchange=render;
+$('heat').onclick=e=>{stop();const r=e.target.getBoundingClientRect(),px=(e.clientX-r.left)/r.width,py=(e.clientY-r.top)/r.height,{p,q,hp,hq}=HM;cur=S.c.slice();cur[p]=S.c[p]-hp+px*2*hp;cur[q]=S.c[q]+hq-py*2*hq;trail=[cur.slice()];render()};
+$('bplay').onclick=()=>{if(bint){stopB();return}if(bk>=S.n){hist=[];bsetK(d+1)}$('bplay').textContent='Pause';bint=setInterval(()=>{if(bk>=S.n){stopB();return}bsetK(bk+1)},1000)};
+$('bnext').onclick=()=>{stopB();bsetK(bk+1)};$('bback').onclick=()=>{stopB();bsetK(bk-1)};$('breset').onclick=()=>{stopB();hist=[];bsetK(d+1)};
+$('bs').oninput=()=>{stopB();bsetK(+$('bs').value)};
+$('rs').oninput=()=>{cancelAnimationFrame(ranim);rt=$('rs').value/100;drawResid()};
+$('rreset').onclick=()=>{cancelAnimationFrame(ranim);rset(0)};
+$('rplay').onclick=()=>{cancelAnimationFrame(ranim);const a=rt>=1?0:rt,t0=performance.now(),tick=now=>{const u=Math.min(1,(now-t0)/2800);rset(a+(1-a)*(u*u*(3-2*u)));if(u<1)ranim=requestAnimationFrame(tick)};ranim=requestAnimationFrame(tick)};
+$('c4').onclick=e=>{const i=e.target.dataset&&e.target.dataset.i;if(i!==undefined&&i!==''){sel=+i;drawResid()}};
+reset();
+</script></body></html>
